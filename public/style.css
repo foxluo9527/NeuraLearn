@@ -42,6 +42,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
   padding: 12px 24px;
   border-bottom: 1px solid var(--border);
   background: rgba(10,10,15,0.9);
@@ -50,17 +52,41 @@ body {
   z-index: 100;
 }
 
-.header-left { display: flex; align-items: center; gap: 12px; }
-.logo svg { width: 36px; height: 36px; }
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.header-left > div:last-child { min-width: 0; }
+.logo svg { width: 36px; height: 36px; flex-shrink: 0; }
 .header-title {
   font-family: var(--font-title);
   font-size: 1.125rem;
   font-weight: 700;
   background: linear-gradient(135deg, var(--primary), var(--accent));
   -webkit-background-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
+  color: var(--primary);
+  white-space: nowrap;
 }
-.header-subtitle { font-size: 0.7rem; color: var(--text-muted); }
+.header-subtitle {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.header-center {
+  flex: 1 1 100%;
+  order: 3;
+  display: flex;
+  justify-content: center;
+}
+.header-center.hidden { display: none; }
 
 .progress-pill {
   font-size: 0.8125rem;
@@ -69,12 +95,18 @@ body {
   background: var(--bg-elevated);
   border-radius: 20px;
   border: 1px solid var(--border);
+  white-space: nowrap;
 }
 
-.header-right { display: flex; align-items: center; gap: 12px; }
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
 
 .provider-select-wrap { display: flex; align-items: center; gap: 8px; }
-.provider-select-wrap label { font-size: 0.75rem; color: var(--text-muted); }
+.provider-select-wrap label { font-size: 0.75rem; color: var(--text-muted); white-space: nowrap; }
 .provider-select-wrap select {
   font-size: 0.8125rem;
   padding: 6px 12px;
@@ -82,7 +114,10 @@ body {
   border: 1px solid var(--border);
   border-radius: 8px;
   color: var(--text);
+  max-width: 140px;
 }
+
+.btn-kb .btn-label { white-space: nowrap; }
 
 .btn-ghost, .btn-back {
   display: inline-flex;
@@ -477,7 +512,21 @@ body {
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
-.classroom-meta h2 { font-family: var(--font-title); font-size: 1.125rem; margin-bottom: 8px; }
+.classroom-meta {
+  flex: 1;
+  min-width: 0;
+}
+.classroom-meta h2 {
+  font-family: var(--font-title);
+  font-size: 1.125rem;
+  margin-bottom: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.back-label-short { display: none; }
+.phase-label-short { display: none; }
 
 .phase-bar { display: flex; gap: 8px; flex-wrap: wrap; }
 .phase {
@@ -491,6 +540,11 @@ body {
   color: var(--text-muted);
   border: 1px solid var(--border);
   transition: all 0.2s;
+  flex: 0 1 auto;
+}
+.phase-text {
+  line-height: 1.2;
+  white-space: nowrap;
 }
 .phase-icon {
   width: 14px;
@@ -1084,10 +1138,41 @@ body {
 
 @media (max-width: 900px) {
   .landing-hero { padding: 40px 20px 48px; }
-  .landing-tracks-section { padding: 0 20px 32px; }
+  .landing-tracks-section { padding: 32px 20px 32px; }
   .landing-tracks { grid-template-columns: 1fr; }
-  .path-layout { grid-template-columns: 1fr; }
-  .path-timeline { flex-direction: row; overflow-x: auto; }
+  .path-hero { padding: 24px 20px 20px; }
+  .path-hero h2 { font-size: 1.5rem; }
+  .path-layout { grid-template-columns: 1fr; padding: 24px 20px; }
+  .path-timeline { flex-direction: row; overflow-x: auto; padding-bottom: 8px; }
+  .classroom-toolbar {
+    padding: 10px 16px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .btn-back { align-self: flex-start; }
+  .classroom-meta {
+    width: 100%;
+    flex: none;
+  }
+  .classroom-meta h2 { font-size: 1rem; margin-bottom: 6px; }
+  .phase-bar {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+    width: 100%;
+  }
+  .phase {
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 8px 4px;
+    gap: 5px;
+    font-size: 0.6875rem;
+    border-radius: 10px;
+    text-align: center;
+  }
+  .phase-text { font-size: 0.6875rem; }
   .classroom-grid {
     grid-template-columns: 1fr;
     grid-template-rows: minmax(0, 1fr) minmax(0, 280px);
@@ -1096,4 +1181,87 @@ body {
     max-height: 280px;
     border-top: 1px solid var(--border);
   }
+  .knowledge-drawer { width: 100%; max-width: 100%; }
+}
+
+/* 顶部功能栏 — 平板/手机 */
+@media (max-width: 768px) {
+  .header {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-rows: auto auto;
+    gap: 10px 12px;
+    padding: 10px 16px;
+  }
+
+  .header-left {
+    grid-column: 1;
+    grid-row: 1;
+    gap: 10px;
+  }
+
+  .header-right {
+    grid-column: 2;
+    grid-row: 1;
+    gap: 8px;
+  }
+
+  .header-center {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    order: unset;
+    flex: unset;
+  }
+
+  .header-center:not(.hidden) .progress-pill {
+    display: block;
+    width: 100%;
+    text-align: center;
+    font-size: 0.75rem;
+    padding: 5px 12px;
+  }
+
+  .logo svg { width: 32px; height: 32px; }
+  .header-title { font-size: 1rem; }
+  .header-subtitle { display: none; }
+
+  .provider-label { display: none; }
+  .provider-select-wrap select {
+    max-width: 108px;
+    padding: 6px 8px;
+    font-size: 0.75rem;
+  }
+
+  .btn-kb {
+    padding: 8px 10px;
+  }
+  .btn-kb .btn-label { display: none; }
+
+  .back-label-full { display: none; }
+  .back-label-short { display: inline; }
+}
+
+@media (max-width: 380px) {
+  .phase-label-full { display: none; }
+  .phase-label-short { display: inline; }
+}
+
+@media (min-width: 901px) {
+  .header {
+    flex-wrap: nowrap;
+  }
+  .header-center {
+    flex: 0 1 auto;
+    order: 0;
+  }
+}
+
+@media (min-width: 769px) and (max-width: 1100px) {
+  .header-center:not(.hidden) {
+    flex: 1 1 100%;
+    order: 3;
+    justify-content: center;
+  }
+  .header-subtitle { max-width: 180px; }
+  .provider-select-wrap select { max-width: 120px; }
 }
