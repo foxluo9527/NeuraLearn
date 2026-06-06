@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>NeuraLearn - AI 应用开发课堂</title>
+  <title>NeuraLearn - AI 智能学习平台</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
@@ -41,9 +41,44 @@
       </div>
     </header>
 
+    <!-- 官网式前置首页 -->
+    <main id="view-landing" class="view active">
+      <section class="landing-hero">
+        <div class="landing-hero-bg"></div>
+        <div class="landing-hero-inner">
+          <span class="landing-eyebrow">AI 驱动的个性化学习平台</span>
+          <h2 class="landing-headline">选择方向，<br><span class="gradient-text">AI 老师陪你学</span></h2>
+          <p class="landing-lead">覆盖移动端、Web、云原生、数据与 AI 等热门技术栈。NeuraLearn 根据你的节奏智能讲解、即时答疑、课后巩固。</p>
+          <div class="landing-actions">
+            <button class="btn-primary btn-lg" id="btn-landing-start">开始 AI 应用开发</button>
+            <button class="btn-ghost btn-lg" id="btn-landing-explore">浏览全部方向</button>
+          </div>
+          <div class="landing-stats">
+            <div class="landing-stat"><strong>6</strong><span>技术方向</span></div>
+            <div class="landing-stat"><strong>12</strong><span>AI 互动课时</span></div>
+            <div class="landing-stat"><strong>24/7</strong><span>AI 答疑</span></div>
+          </div>
+        </div>
+      </section>
+      <section class="landing-tracks-section" id="landing-tracks-section">
+        <div class="landing-section-head">
+          <h3>探索学习路径</h3>
+          <p>点击任意方向进入智能课堂 · 当前 Demo 演示 AI 应用开发课程</p>
+        </div>
+        <div class="landing-tracks" id="landing-tracks"></div>
+      </section>
+      <footer class="landing-footer">
+        <p>NeuraLearn · 投资人 Demo · 所有方向暂指向 AI 应用开发体验路径</p>
+      </footer>
+    </main>
+
     <!-- 学习路径首页 -->
-    <main id="view-path" class="view active">
+    <main id="view-path" class="view">
       <div class="path-hero">
+        <button class="btn-back path-back" id="btn-back-landing">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+          切换学习方向
+        </button>
         <h2>AI 应用开发</h2>
         <p>从 Prompt 到 Agent，构建生产级 AI 应用</p>
         <button class="btn-primary btn-continue" id="btn-continue">继续学习</button>
@@ -142,6 +177,7 @@
   <script src="js/stream-client.js"></script>
   <script src="js/stage-renderer.js"></script>
   <script src="js/voice.js"></script>
+  <script src="js/landing-view.js"></script>
   <script src="js/path-view.js"></script>
   <script src="js/classroom.js"></script>
   <script src="app.js"></script>

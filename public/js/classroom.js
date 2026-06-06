@@ -71,8 +71,7 @@ const Classroom = {
   },
 
   showView(name) {
-    this.dom.viewPath?.classList.toggle('active', name === 'path');
-    this.dom.viewClassroom?.classList.toggle('active', name === 'classroom');
+    App.showView(name);
   },
 
   getActivePhase() {

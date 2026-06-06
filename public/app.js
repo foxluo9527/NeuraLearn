@@ -2,13 +2,39 @@
  * NeuraLearn App 入口
  */
 const App = {
+  currentView: 'landing',
+
+  showView(name) {
+    this.currentView = name;
+    ['landing', 'path', 'classroom'].forEach((v) => {
+      document.getElementById(`view-${v}`)?.classList.toggle('active', name === v);
+    });
+
+    const subtitle = document.querySelector('.header-subtitle');
+    const progress = document.getElementById('header-progress');
+    const drawerBtn = document.getElementById('btn-knowledge-drawer');
+
+    if (name === 'landing') {
+      subtitle.textContent = '选择你的学习方向';
+      progress?.classList.add('hidden');
+      drawerBtn?.classList.add('hidden');
+    } else {
+      subtitle.textContent = 'AI 应用开发 · 智能课堂';
+      progress?.classList.remove('hidden');
+      drawerBtn?.classList.remove('hidden');
+    }
+  },
+
   async init() {
     Classroom.bindEvents();
     this.bindDrawer();
     this.bindProvider();
+    LandingView.init();
+    document.getElementById('btn-back-landing')?.addEventListener('click', () => this.showView('landing'));
     await this.initProviders();
     await PathView.load();
     await this.loadKnowledgeDrawer();
+    this.showView('landing');
   },
 
   getProvider() {
