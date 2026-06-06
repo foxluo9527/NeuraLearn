@@ -89,6 +89,9 @@ const StreamClient = {
     });
 
     result = result.replace(/\[STAGE:\w+\]/g, '');
+    result = result.replace(/\[SLIDE:[\s\S]*$/g, '');
+    result = result.replace(/\[DIAGRAM:[\s\S]*$/g, '');
+    result = result.replace(/\[SCORE:[\s\S]*$/g, '');
     return result.replace(/\n{3,}/g, '\n\n').trim();
   },
 
@@ -125,6 +128,16 @@ const StreamClient = {
       }
       lastIndex = block.end;
     });
+
+    if (blocks.length) {
+      const trailingOral = text.slice(lastIndex).replace(/\[STAGE:\w+\]/g, '').trim();
+      if (trailingOral) {
+        const last = segments[segments.length - 1];
+        if (last) {
+          last.oral = [last.oral, trailingOral].filter(Boolean).join(' ');
+        }
+      }
+    }
 
     const trailing = text.slice(lastIndex);
     const stageM = trailing.match(/\[STAGE:(\w+)\]/);

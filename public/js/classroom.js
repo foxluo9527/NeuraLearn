@@ -178,8 +178,9 @@ const Classroom = {
 
   ingestTeachingSegments(fullText, parsed, msgId) {
     if (this._finalizedMsgIds?.has(msgId)) {
+      const stripped = StreamClient.stripMarkers(fullText);
       return {
-        oral: parsed.cleanText || StreamClient.stripMarkers(fullText),
+        oral: this.ensureTeachingOralPrompt(stripped),
         slideIndex: this.messageSlideMap[msgId],
       };
     }
@@ -203,8 +204,9 @@ const Classroom = {
     if (this.slides.length >= this.getTeachingSlideTotal()) this.pendingStageQuiz = true;
 
     if (!indexedSegments.length) {
+      const stripped = StreamClient.stripMarkers(fullText);
       return {
-        oral: parsed.cleanText || StreamClient.stripMarkers(fullText),
+        oral: this.ensureTeachingOralPrompt(stripped),
         slideIndex: this.messageSlideMap[msgId],
       };
     }
@@ -221,30 +223,25 @@ const Classroom = {
     if (!this._finalizedMsgIds) this._finalizedMsgIds = new Set();
     this._finalizedMsgIds.add(msgId);
 
-    const oral = this.ensureTeachingOralPrompt(first.oral);
+    const oral = this.ensureTeachingOralPrompt(first.oral || StreamClient.stripMarkers(fullText));
     this.updateTeachingUX();
     return { oral, slideIndex: first.slideIndex };
   },
 
-  previewTeachingStream(fullText, parsed, msgId) {
-    const { segments } = StreamClient.parseTeachingSegments(fullText);
-    if (!segments.length) {
-      return { oral: parsed.cleanText || StreamClient.stripMarkers(fullText), slideIndex: undefined };
+  finalizeStreamBubble(bubbleEl, display) {
+    if (!bubbleEl) return;
+    const bubble = bubbleEl.querySelector('.dock-bubble');
+    if (!bubble) return;
+    const oral = StreamClient.toDisplayText(display.oral || '');
+    bubble.textContent = oral || '...';
+    if (display.slideIndex !== undefined) {
+      bubbleEl.dataset.slideIndex = display.slideIndex;
+      bubbleEl.style.cursor = 'pointer';
+      const hint = document.createElement('span');
+      hint.className = 'dock-link-hint';
+      hint.textContent = '点击查看知识点';
+      bubble.appendChild(hint);
     }
-
-    segments.forEach((seg) => {
-      if (!this.isAllowedSlideId(seg.slide.id)) return;
-      if (!this.slides.find((x) => x.id === seg.slide.id) && this.slides.length >= this.getTeachingSlideTotal()) return;
-      if (!this.slides.find((x) => x.id === seg.slide.id)) {
-        seg.slide.messageId = msgId;
-        this.slides.push(seg.slide);
-      }
-    });
-
-    const slideIndex = this.slides.findIndex((x) => x.id === segments[0].slide.id);
-    this.currentSlideIndex = slideIndex;
-    this.showCurrentSlide();
-    return { oral: segments[0].oral, slideIndex };
   },
 
   showQueuedTeachingSegment() {
@@ -794,6 +791,10 @@ const Classroom = {
     const msgs = [...this.messages, ...extraMessages];
     let bubbleEl = null;
     let msgId = `msg-${Date.now()}`;
+    const deferTeachingUI = this.stage === 'teaching' && !this.revisitMode;
+    const STREAMING_HINT = '正在组织讲解…';
+
+    if (deferTeachingUI) this._deferStageUpdate = true;
 
     try {
       if (!isOpening && extraMessages.length) {
@@ -803,6 +804,9 @@ const Classroom = {
 
       this.setLoading(false);
       bubbleEl = this.addDockMessage('ai', '', msgId, null, { appendOnly: true });
+      if (deferTeachingUI && bubbleEl) {
+        bubbleEl.querySelector('.dock-bubble').textContent = STREAMING_HINT;
+      }
 
       const lastUserMsg = !isOpening && extraMessages.length
         ? extraMessages[extraMessages.length - 1]
@@ -813,15 +817,14 @@ const Classroom = {
         '/api/chat',
         { messages: msgs, stage: this.stage, topic: this.topic, provider: App.getProvider() },
         (fullText, parsed) => {
+          if (deferTeachingUI) {
+            if (bubbleEl) bubbleEl.querySelector('.dock-bubble').textContent = STREAMING_HINT;
+            return;
+          }
+
           let display = { oral: parsed.cleanText || StreamClient.stripMarkers(fullText), slideIndex: undefined };
 
-          if (this.stage === 'teaching' && !this.revisitMode) {
-            if (isQuestionTurn) {
-              display.oral = parsed.cleanText || StreamClient.stripMarkers(fullText);
-            } else {
-              display = this.previewTeachingStream(fullText, parsed, msgId);
-            }
-          } else if (parsed.slides.length) {
+          if (parsed.slides.length) {
             parsed.slides.forEach((s) => {
               if (!this.slides.find((x) => x.id === s.id)) {
                 s.messageId = msgId;
@@ -842,7 +845,7 @@ const Classroom = {
             }
           }
 
-          if (!isQuestionTurn && parsed.diagrams.length) {
+          if (parsed.diagrams.length) {
             parsed.diagrams.forEach((d) => {
               if (!this.diagrams.find((x) => x.id === d.id)) this.diagrams.push(d);
             });
@@ -852,11 +855,13 @@ const Classroom = {
           }
         },
         (fullText, parsed) => {
+          this._deferStageUpdate = false;
+
           let display = { oral: parsed.cleanText || StreamClient.stripMarkers(fullText), slideIndex: undefined };
 
-          if (this.stage === 'teaching' && !this.revisitMode) {
+          if (deferTeachingUI) {
             if (isQuestionTurn) {
-              display.oral = parsed.cleanText || StreamClient.stripMarkers(fullText);
+              display.oral = StreamClient.toDisplayText(fullText);
             } else {
               display = this.ingestTeachingSegments(fullText, parsed, msgId);
             }
@@ -865,23 +870,18 @@ const Classroom = {
             display.slideIndex = this.messageSlideMap[msgId] ?? (this.slides.length ? this.slides.length - 1 : undefined);
           }
 
-          if (bubbleEl) {
-            bubbleEl.querySelector('.dock-bubble').textContent = display.oral || parsed.cleanText || '...';
-            if (display.slideIndex !== undefined) {
-              bubbleEl.dataset.slideIndex = display.slideIndex;
-              bubbleEl.style.cursor = 'pointer';
-            }
-          }
+          display.oral = StreamClient.toDisplayText(display.oral || fullText);
+          this.finalizeStreamBubble(bubbleEl, display);
 
-          this.updatePhaseMessage(msgId, display.oral || parsed.cleanText, display.slideIndex);
+          this.updatePhaseMessage(msgId, display.oral, display.slideIndex);
 
           if (!isOpening) {
             extraMessages.forEach((m) => this.messages.push(m));
           }
           this.messages.push({ role: 'assistant', content: fullText });
-          this.teachingContent += '\n' + (display.oral || parsed.cleanText);
+          this.teachingContent += '\n' + display.oral;
 
-          Voice.speak(display.oral || parsed.cleanText);
+          Voice.speak(display.oral);
           this.saveSession();
 
           if (this.stage === 'teaching' && !this.revisitMode) {
@@ -900,6 +900,7 @@ const Classroom = {
     } catch (err) {
       App.showToast(err.message, true);
     } finally {
+      this._deferStageUpdate = false;
       this.isStreaming = false;
       this.setLoading(false);
     }
@@ -919,6 +920,7 @@ const Classroom = {
   },
 
   showCurrentSlide() {
+    if (this._deferStageUpdate) return;
     if (!this.slides.length) return;
     this.stageView = 'primary';
     this.mode = 'slide';
