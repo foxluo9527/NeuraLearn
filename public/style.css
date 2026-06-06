@@ -949,6 +949,21 @@ body {
 }
 .dock-loading.hidden { display: none; }
 
+.dock-teaching-hint {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  background: rgba(79, 158, 255, 0.08);
+  border: 1px solid rgba(79, 158, 255, 0.22);
+  border-radius: 10px;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+.dock-teaching-hint.hidden { display: none; }
+
 .dock-input {
   padding: 12px;
   border-top: 1px solid var(--border);
