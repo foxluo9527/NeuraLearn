@@ -23,6 +23,7 @@ const Classroom = {
   currentDockPhase: 'review',
   phaseLabels: { review: '节前回顾', teaching: '知识讲解', quiz: '课后练习' },
   TEACHING_SLIDE_TOTAL: 6,
+  teachingOutline: [],
   REVIEW_INTRO: '请先在左侧完成节前回顾选择题，检验前置知识。',
   quizState: { answers: {} },
   stageView: 'primary',
@@ -97,11 +98,38 @@ const Classroom = {
   },
 
   getTeachingSlideTotal() {
-    return Math.max(this.slides.length, this.currentSlideIndex + 1, this.TEACHING_SLIDE_TOTAL);
+    return this.teachingOutline?.length || this.TEACHING_SLIDE_TOTAL;
+  },
+
+  isAllowedSlideId(slideId) {
+    const num = parseInt(String(slideId).replace(/^s/i, ''), 10);
+    return num >= 1 && num <= this.getTeachingSlideTotal();
+  },
+
+  isLastTeachingSlide() {
+    return this.currentSlideIndex >= this.getTeachingSlideTotal() - 1;
+  },
+
+  async loadTeachingOutline() {
+    try {
+      const res = await fetch(`/api/teaching-outline?topic=${encodeURIComponent(this.topic)}`);
+      const data = await res.json();
+      this.teachingOutline = data.outline || [];
+    } catch {
+      this.teachingOutline = [];
+    }
   },
 
   ensureTeachingOralPrompt(oral) {
     const t = (oral || '').trim();
+    if (this.isLastTeachingSlide()) {
+      if (!t) return '这是本课最后一个知识点。理解了吗？回复「继续」进入课后练习。';
+      if (/课后练习|最后一/.test(t.slice(-40))) return t;
+      if (/[?？]|理解了吗|清楚吗|明白吗/.test(t.slice(-40))) {
+        return `${t} 回复「继续」进入课后练习。`;
+      }
+      return `${t} 这是最后一个知识点。理解了吗？回复「继续」进入课后练习。`;
+    }
     if (!t) return '请看左侧知识点卡片。理解了吗？回复「继续」进入下一知识点。';
     if (/[?？]|理解了吗|清楚吗|明白吗|继续/.test(t.slice(-40))) return t;
     return `${t} 理解了吗？回复「继续」进入下一知识点。`;
@@ -109,16 +137,28 @@ const Classroom = {
 
   updateTeachingUX() {
     const hint = document.getElementById('dock-teaching-hint');
+    const hintText = hint?.querySelector('span');
     const waiting = this.stage === 'teaching' && !this.revisitMode && this.awaitingConfirmation;
+    const onLast = waiting && this.isLastTeachingSlide();
 
     hint?.classList.toggle('hidden', !waiting);
+    if (hintText) {
+      hintText.textContent = onLast
+        ? '本课最后一个知识点，理解后进入课后练习'
+        : '先看左侧知识点，理解后点击继续';
+    }
     if (this.dom.dockInput) {
-      this.dom.dockInput.placeholder = waiting
-        ? '回复「继续」或「懂了」进入下一知识点，也可提问…'
-        : '向 AI 老师提问…';
+      this.dom.dockInput.placeholder = onLast
+        ? '回复「继续」进入课后练习，也可提问…'
+        : waiting
+          ? '回复「继续」或「懂了」进入下一知识点，也可提问…'
+          : '向 AI 老师提问…';
     }
     if (waiting && this.slides.length) {
-      this.dom.dockContext.textContent = `正在讲解：${this.topic} · 等待确认（${this.currentSlideIndex + 1}/${this.getTeachingSlideTotal()}）`;
+      const pos = Math.min(this.currentSlideIndex + 1, this.getTeachingSlideTotal());
+      this.dom.dockContext.textContent = onLast
+        ? `正在讲解：${this.topic} · 最后一节（${pos}/${this.getTeachingSlideTotal()}）`
+        : `正在讲解：${this.topic} · 等待确认（${pos}/${this.getTeachingSlideTotal()}）`;
     } else if (this.stage === 'teaching' && !this.revisitMode) {
       this.dom.dockContext.textContent = `正在讲解：${this.topic}`;
     }
@@ -145,17 +185,22 @@ const Classroom = {
     }
 
     const { segments, stage } = StreamClient.parseTeachingSegments(fullText);
-    const indexedSegments = segments.map((seg) => {
-      let slideIndex = this.slides.findIndex((x) => x.id === seg.slide.id);
-      if (slideIndex === -1) {
-        seg.slide.messageId = msgId;
-        this.slides.push(seg.slide);
-        slideIndex = this.slides.length - 1;
-      }
-      return { oral: seg.oral, slide: seg.slide, slideIndex };
-    });
+    const indexedSegments = segments
+      .filter((seg) => this.isAllowedSlideId(seg.slide.id))
+      .map((seg) => {
+        let slideIndex = this.slides.findIndex((x) => x.id === seg.slide.id);
+        if (slideIndex === -1) {
+          if (this.slides.length >= this.getTeachingSlideTotal()) return null;
+          seg.slide.messageId = msgId;
+          this.slides.push(seg.slide);
+          slideIndex = this.slides.length - 1;
+        }
+        return { oral: seg.oral, slide: seg.slide, slideIndex };
+      })
+      .filter(Boolean);
 
     if (stage === 'quiz') this.pendingStageQuiz = true;
+    if (this.slides.length >= this.getTeachingSlideTotal()) this.pendingStageQuiz = true;
 
     if (!indexedSegments.length) {
       return {
@@ -188,6 +233,8 @@ const Classroom = {
     }
 
     segments.forEach((seg) => {
+      if (!this.isAllowedSlideId(seg.slide.id)) return;
+      if (!this.slides.find((x) => x.id === seg.slide.id) && this.slides.length >= this.getTeachingSlideTotal()) return;
       if (!this.slides.find((x) => x.id === seg.slide.id)) {
         seg.slide.messageId = msgId;
         this.slides.push(seg.slide);
@@ -233,7 +280,9 @@ const Classroom = {
     if (!this.isConfirmationMessage(userText)) return false;
 
     const hasQueue = this.pendingSegments.length > 0;
-    const shouldFinish = this.pendingStageQuiz && !hasQueue;
+    const atLastSlide = this.slides.length >= this.getTeachingSlideTotal()
+      && this.currentSlideIndex >= this.getTeachingSlideTotal() - 1;
+    const shouldFinish = (this.pendingStageQuiz && !hasQueue) || (!hasQueue && atLastSlide);
 
     if (!hasQueue && !shouldFinish) {
       this.awaitingConfirmation = false;
@@ -281,6 +330,8 @@ const Classroom = {
     this.dom.dockInput.value = '';
     this.clearImagePreview();
 
+    await this.loadTeachingOutline();
+
     this.showView('classroom');
 
     if (revisit) {
@@ -320,11 +371,22 @@ const Classroom = {
   applySession(session) {
     this.phaseMessages = session.phaseMessages || { review: [], teaching: [], quiz: [] };
     this.phasesCompleted = session.phasesCompleted || [];
-    this.slides = session.slides || [];
+    const maxSlides = this.getTeachingSlideTotal();
+    const seenIds = new Set();
+    this.slides = (session.slides || []).filter((s) => {
+      if (!this.isAllowedSlideId(s.id) || seenIds.has(s.id)) return false;
+      seenIds.add(s.id);
+      return true;
+    }).slice(0, maxSlides);
     this.teachingContent = session.teachingContent || '';
     this.messages = session.messages || [];
     this.stage = session.currentStage || 'review';
     this.currentDockPhase = this.getActivePhase();
+    this.currentSlideIndex = Math.min(
+      session.currentSlideIndex ?? Math.max(0, this.slides.length - 1),
+      Math.max(0, this.slides.length - 1),
+    );
+    if (this.slides.length >= maxSlides) this.pendingStageQuiz = true;
     this.quizQuestions = session.quizQuestions || [];
     this.quizIndex = session.quizIndex ?? 0;
     this.quizState = session.quizState || { answers: {} };
@@ -401,7 +463,8 @@ const Classroom = {
           phaseMessages: this.phaseMessages,
           phasesCompleted: this.phasesCompleted,
           currentStage: extra.currentStage ?? (this.stage === 'done' ? 'done' : this.stage),
-          slides: this.slides,
+          currentSlideIndex: this.currentSlideIndex,
+          slides: this.slides.slice(0, this.getTeachingSlideTotal()),
           teachingContent: this.teachingContent,
           messages: this.messages,
           reviewResult: extra.reviewResult ?? null,
@@ -866,7 +929,7 @@ const Classroom = {
       return;
     }
     StageRenderer.renderSlide(this.dom.stageContent, slide, this.currentSlideIndex, this.getTeachingSlideTotal());
-    this.dom.stagePageIndicator.textContent = `${this.currentSlideIndex + 1} / ${this.getTeachingSlideTotal()}`;
+    this.dom.stagePageIndicator.textContent = `${Math.min(this.currentSlideIndex + 1, this.getTeachingSlideTotal())} / ${this.getTeachingSlideTotal()}`;
     this.dom.stageModeLabel.textContent = '知识讲解';
   },
 

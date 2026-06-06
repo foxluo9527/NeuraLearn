@@ -63,6 +63,114 @@ const TOPIC_META = {
   '效果评估': { prerequisites: 'RAG 评估指标、A/B 测试', module: 'm4', reviewTopic: 'RAG 检索增强' },
 };
 
+/** 每课固定 6 个知识点 — AI 必须按此大纲讲解，不得增减 */
+const TEACHING_OUTLINES = {
+  'Prompt 工程': [
+    { id: 's1', title: '什么是 Prompt' },
+    { id: 's2', title: 'Prompt 的基本结构' },
+    { id: 's3', title: 'Prompt 设计关键技巧' },
+    { id: 's4', title: 'Prompt 迭代与测试' },
+    { id: 's5', title: '代码中的 Prompt 模板' },
+    { id: 's6', title: '防御性 Prompt 与安全边界' },
+  ],
+  'Token 与上下文': [
+    { id: 's1', title: 'Token 是什么' },
+    { id: 's2', title: '上下文窗口与限制' },
+    { id: 's3', title: '中英文 Token 差异' },
+    { id: 's4', title: '长上下文策略' },
+    { id: 's5', title: '代码中估算 Token' },
+    { id: 's6', title: '上下文截断与优先级' },
+  ],
+  '模型选型': [
+    { id: 's1', title: '主流模型能力对比' },
+    { id: 's2', title: '成本与性能权衡' },
+    { id: 's3', title: '任务匹配选型原则' },
+    { id: 's4', title: '多模型路由架构' },
+    { id: 's5', title: '代码中切换模型' },
+    { id: 's6', title: '选型评估与 A/B 测试' },
+  ],
+  'RAG 检索增强': [
+    { id: 's1', title: 'RAG 架构概述' },
+    { id: 's2', title: '文档切分策略' },
+    { id: 's3', title: '向量检索流程' },
+    { id: 's4', title: 'Hybrid Search' },
+    { id: 's5', title: 'RAG 代码实现要点' },
+    { id: 's6', title: 'RAG 常见问题与优化' },
+  ],
+  'Embedding 原理': [
+    { id: 's1', title: 'Embedding 基本概念' },
+    { id: 's2', title: '向量相似度计算' },
+    { id: 's3', title: '常见 Embedding 模型' },
+    { id: 's4', title: '维度与精度权衡' },
+    { id: 's5', title: '代码调用 Embedding API' },
+    { id: 's6', title: 'Embedding 质量评估' },
+  ],
+  '向量数据库': [
+    { id: 's1', title: '向量数据库作用' },
+    { id: 's2', title: '索引类型对比' },
+    { id: 's3', title: '写入与检索流程' },
+    { id: 's4', title: '元数据过滤' },
+    { id: 's5', title: '代码集成向量库' },
+    { id: 's6', title: '生产环境运维要点' },
+  ],
+  'Function Calling': [
+    { id: 's1', title: 'Function Calling 原理' },
+    { id: 's2', title: 'JSON Schema 定义' },
+    { id: 's3', title: '工具注册与调用流程' },
+    { id: 's4', title: '错误处理与重试' },
+    { id: 's5', title: 'Python/TS 实现示例' },
+    { id: 's6', title: '安全与权限控制' },
+  ],
+  'ReAct Agent': [
+    { id: 's1', title: 'ReAct 框架概述' },
+    { id: 's2', title: 'Thought-Action-Observation 循环' },
+    { id: 's3', title: '工具链设计' },
+    { id: 's4', title: '停止条件与最大步数' },
+    { id: 's5', title: 'Agent 代码结构' },
+    { id: 's6', title: '调试与可观测性' },
+  ],
+  '多 Agent 协作': [
+    { id: 's1', title: '多 Agent 架构模式' },
+    { id: 's2', title: '任务分解与分配' },
+    { id: 's3', title: 'Agent 间通信' },
+    { id: 's4', title: '冲突与共识机制' },
+    { id: 's5', title: '编排代码示例' },
+    { id: 's6', title: '协作场景最佳实践' },
+  ],
+  '成本与延迟优化': [
+    { id: 's1', title: 'Token 成本构成' },
+    { id: 's2', title: '缓存策略' },
+    { id: 's3', title: '流式输出与首 token 延迟' },
+    { id: 's4', title: '批处理与并发' },
+    { id: 's5', title: '代码层优化技巧' },
+    { id: 's6', title: '监控与成本告警' },
+  ],
+  '安全护栏': [
+    { id: 's1', title: 'AI 应用安全风险' },
+    { id: 's2', title: 'Prompt 注入防护' },
+    { id: 's3', title: '内容审核与过滤' },
+    { id: 's4', title: '输出约束与 Schema' },
+    { id: 's5', title: '护栏代码实现' },
+    { id: 's6', title: '红队测试与迭代' },
+  ],
+  '效果评估': [
+    { id: 's1', title: 'AI 应用评估指标' },
+    { id: 's2', title: 'RAG 评估方法' },
+    { id: 's3', title: '人工 vs 自动评估' },
+    { id: 's4', title: 'A/B 测试设计' },
+    { id: 's5', title: '评估代码与数据集' },
+    { id: 's6', title: '持续评估与回归' },
+  ],
+};
+
+function getTeachingOutline(topic) {
+  if (TEACHING_OUTLINES[topic]) return TEACHING_OUTLINES[topic];
+  return Array.from({ length: 6 }, (_, i) => ({
+    id: `s${i + 1}`,
+    title: `${topic} — 知识点 ${i + 1}`,
+  }));
+}
+
 const ALL_LESSON_IDS = COURSE_MODULES.flatMap((m) => m.lessons.map((l) => l.title));
 
 const LEARNING_SUGGESTIONS = {
@@ -219,6 +327,7 @@ function getFallbackReviewMcq(topic) {
 module.exports = {
   COURSE_MODULES,
   TOPIC_META,
+  TEACHING_OUTLINES,
   ALL_LESSON_IDS,
   LEARNING_SUGGESTIONS,
   INITIAL_GRAPH_NODES,
@@ -226,4 +335,5 @@ module.exports = {
   FALLBACK_REVIEW_MCQ,
   getLessonByTitle,
   getFallbackReviewMcq,
+  getTeachingOutline,
 };

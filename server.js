@@ -18,6 +18,7 @@ const {
   INITIAL_GRAPH_NODES,
   INITIAL_KNOWLEDGE_CARDS,
   getFallbackReviewMcq,
+  getTeachingOutline,
 } = courseData;
 
 const app = express();
@@ -47,16 +48,71 @@ const store = {
 // SYSTEM PROMPTS
 // ============================================================================
 
-function countTeachingSlides(messages) {
-  const re = /\[SLIDE:\{[\s\S]*?\}\]/g;
-  let count = 0;
-  (messages || []).forEach((m) => {
-    if (m.role === 'assistant') {
-      const matches = m.content.match(re);
-      if (matches) count += matches.length;
+function findMatchingBrace(text, start) {
+  if (text[start] !== '{') return -1;
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let i = start; i < text.length; i++) {
+    const c = text[i];
+    if (escape) {
+      escape = false;
+      continue;
     }
+    if (inString) {
+      if (c === '\\') escape = true;
+      else if (c === '"') inString = false;
+      continue;
+    }
+    if (c === '"') {
+      inString = true;
+      continue;
+    }
+    if (c === '{') depth++;
+    else if (c === '}') {
+      depth--;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
+}
+
+function extractTaggedBlocks(text, tag) {
+  const blocks = [];
+  const open = `[${tag}:`;
+  let searchFrom = 0;
+  while (searchFrom < text.length) {
+    const openIdx = text.indexOf(open, searchFrom);
+    if (openIdx === -1) break;
+    const jsonStart = openIdx + open.length;
+    if (text[jsonStart] !== '{') {
+      searchFrom = openIdx + 1;
+      continue;
+    }
+    const jsonEnd = findMatchingBrace(text, jsonStart);
+    if (jsonEnd === -1) break;
+    if (text[jsonEnd + 1] !== ']') {
+      searchFrom = openIdx + 1;
+      continue;
+    }
+    blocks.push({ json: text.slice(jsonStart, jsonEnd + 1) });
+    searchFrom = jsonEnd + 2;
+  }
+  return blocks;
+}
+
+function countTeachingSlides(messages) {
+  const ids = new Set();
+  (messages || []).forEach((m) => {
+    if (m.role !== 'assistant') return;
+    extractTaggedBlocks(m.content, 'SLIDE').forEach((b) => {
+      try {
+        const slide = JSON.parse(b.json);
+        if (slide.id) ids.add(slide.id);
+      } catch { /* skip */ }
+    });
   });
-  return count;
+  return ids.size;
 }
 
 function isTeachingConfirmation(text) {
@@ -77,48 +133,56 @@ function buildSystemPrompt(stage, topic, messages = []) {
     const lastIsQuestion = lastUser && !isTeachingConfirmation(lastUser.content);
 
     if (lastIsQuestion) {
+      const outline = getTeachingOutline(topic);
+      const taught = countTeachingSlides(messages);
+      const onLast = taught >= outline.length;
       return `你是 NeuraLearn 平台的 AI 教师，正在教授：${topic}
 学生刚提问或补充了内容，请先针对性简短回应。
 
 【回应规则 — 必须严格遵守】
 - 只用口语回答，80 字以内
 - 禁止输出 [SLIDE:...]、[DIAGRAM:...]、[STAGE:...] 等任何结构化标记
-- 不要讲下一个知识点，不要扩展课纲外的新主题
-- 回应后问一句「这样清楚吗？确认后我们继续」`;
+- 不要讲${onLast ? '新' : '下一个'}知识点，不要扩展课纲外的新主题
+- 回应后问一句「这样清楚吗？${onLast ? '确认后进入课后练习' : '确认后我们继续'}」`;
     }
 
+    const outline = getTeachingOutline(topic);
     const taught = countTeachingSlides(messages);
-    const nextId = `s${taught + 1}`;
-    const progressHint = taught === 0
-      ? '这是第一个知识点（s1）。欢迎语最多 2 句，立刻讲解 s1 并输出 [SLIDE:s1]。'
-      : `已讲完 ${taught} 个知识点，本次只讲第 ${taught + 1} 个（id=${nextId}）。`;
+
+    if (taught >= outline.length) {
+      return `你是 NeuraLearn 平台的 AI 教师，「${topic}」全部 ${outline.length} 个知识点已讲完。
+学生回复「继续/懂了」时，只输出一行：[STAGE:quiz]
+禁止输出任何 [SLIDE:...] 或额外讲解。`;
+    }
+
+    const current = outline[taught];
+    const outlineList = outline
+      .map((p, i) => `${p.id} ${p.title}${i < taught ? ' ✓' : i === taught ? ' ← 当前' : ''}`)
+      .join('\n');
+
+    const nextId = current.id;
+    const progressHint = `当前必须讲 ${nextId}「${current.title}」，title 必须与大纲一致`;
 
     return `你是 NeuraLearn 平台的 AI 教师，正在教授 AI 应用开发课程中的：${topic}
-当前任务：主动教学，你主导讲解节奏。
+当前任务：按固定大纲主动教学。
 
-【节奏规则 — 必须严格遵守】
-- ${progressHint}
-- 每次回复只能讲解 1 个知识点，只能输出 1 个 [SLIDE:...] 标记
-- 禁止一次输出多个 SLIDE，禁止提前输出 [STAGE:quiz]
-- 讲完当前知识点后，必须用口语问「理解了吗？」或「这里清楚吗？」，然后立刻停止，等待学生回复
-- 只有学生回复「懂了/继续/明白」等纯确认语后，下一条回复才能讲下一个知识点
-- 全部核心知识点（共 6 个：s1~s6）都讲完且学生确认后，才在末尾单独一行输出：[STAGE:quiz]
+【本课大纲 — 共 ${outline.length} 个，严禁超出或自拟标题】
+${outlineList}
 
-教学方式：
-- 结合 Python/TypeScript 代码示例
-- 保持自然，像技术分享而非念课本
-- 只讲本课「${topic}」大纲内的内容，不要擅自扩展无关主题
-- 左侧卡片放详细要点，对话栏只放简短引导语（每段 ≤80 字）
+【本次必须讲】${progressHint}
+- 每次回复只能输出 1 个 [SLIDE:...]，id 必须是 ${nextId}
+- 禁止讲 s${outline.length + 1} 及以后的内容
 
-【SLIDE 格式】每讲完一个知识点输出（与口语一起）：
-[SLIDE:{"id":"${nextId}","title":"标题","bullets":["要点1","要点2"],"code":null}]
-- id 必须严格使用 ${nextId}
-- code 字段可选；若含代码，JSON 字符串内换行用 \\n，引号用 \\"
+【节奏规则】
+- 欢迎语最多 2 句（仅 s1 时），立刻讲当前知识点
+- 讲完用口语问「理解了吗？」，然后停止等待确认
+- 全部 ${outline.length} 个讲完后，下次确认时输出 [STAGE:quiz]
 
-遇到复杂流程时，额外输出分步图解：
-[DIAGRAM:{"id":"d1","title":"流程名","steps":[{"label":"步骤1","mermaid":"graph LR\\n  A[输入]-->B[处理]"}]}]
+【SLIDE 格式】
+[SLIDE:{"id":"${nextId}","title":"${current.title}","bullets":["要点1","要点2"],"code":null}]
+- bullets 3-4 条，围绕「${current.title}」
 
-【重要】不要只发欢迎语就停止；每次回复必须包含：简短口语 + 1 个 SLIDE + 确认提问。`;
+对话栏口语 ≤80 字，详细内容放 SLIDE。`;
   }
 
   if (stage === 'quiz') {
@@ -401,6 +465,12 @@ app.get('/api/providers', (_req, res) => {
     })),
     default: DEFAULT_PROVIDER,
   });
+});
+
+app.get('/api/teaching-outline', (req, res) => {
+  const { topic } = req.query;
+  if (!topic) return res.status(400).json({ error: '缺少 topic' });
+  res.json({ outline: getTeachingOutline(topic) });
 });
 
 app.get('/api/course', (_req, res) => {
