@@ -24,6 +24,7 @@ const Classroom = {
   phaseLabels: { review: '节前回顾', teaching: '知识讲解', quiz: '课后练习' },
   TEACHING_SLIDE_TOTAL: 6,
   teachingOutline: [],
+  teachingInQa: false,
   REVIEW_INTRO: '请先在左侧完成节前回顾选择题，检验前置知识。',
   quizState: { answers: {} },
   stageView: 'primary',
@@ -93,6 +94,7 @@ const Classroom = {
     this.pendingSegments = [];
     this.pendingStageQuiz = false;
     this.awaitingConfirmation = false;
+    this.teachingInQa = false;
     this._finalizedMsgIds = new Set();
     this.updateTeachingUX();
   },
@@ -140,8 +142,9 @@ const Classroom = {
     const hintText = hint?.querySelector('span');
     const waiting = this.stage === 'teaching' && !this.revisitMode && this.awaitingConfirmation;
     const onLast = waiting && this.isLastTeachingSlide();
+    const showHint = waiting && !this.isStreaming && !this.teachingInQa;
 
-    hint?.classList.toggle('hidden', !waiting);
+    hint?.classList.toggle('hidden', !showHint);
     if (hintText) {
       hintText.textContent = onLast
         ? '本课最后一个知识点，理解后进入课后练习'
@@ -161,6 +164,12 @@ const Classroom = {
         : `正在讲解：${this.topic} · 等待确认（${pos}/${this.getTeachingSlideTotal()}）`;
     } else if (this.stage === 'teaching' && !this.revisitMode) {
       this.dom.dockContext.textContent = `正在讲解：${this.topic}`;
+    }
+  },
+
+  scrollDockToBottom() {
+    if (this.dom.dockMessages) {
+      this.dom.dockMessages.scrollTop = this.dom.dockMessages.scrollHeight;
     }
   },
 
@@ -224,6 +233,7 @@ const Classroom = {
     this._finalizedMsgIds.add(msgId);
 
     const oral = this.ensureTeachingOralPrompt(first.oral || StreamClient.stripMarkers(fullText));
+    this.teachingInQa = false;
     this.updateTeachingUX();
     return { oral, slideIndex: first.slideIndex };
   },
@@ -255,6 +265,7 @@ const Classroom = {
     this.messageSlideMap[msgId] = next.slideIndex;
     const oral = this.ensureTeachingOralPrompt(next.oral);
     this.addDockMessage('ai', oral, msgId, null, { slideIndex: next.slideIndex });
+    this.teachingInQa = false;
     this.showCurrentSlide();
     Voice.speak(oral);
     this.updateTeachingUX();
@@ -862,10 +873,12 @@ const Classroom = {
           if (deferTeachingUI) {
             if (isQuestionTurn) {
               display.oral = StreamClient.toDisplayText(fullText);
+              this.teachingInQa = false;
             } else {
               display = this.ingestTeachingSegments(fullText, parsed, msgId);
             }
             this.updateTeachingUX();
+            this.scrollDockToBottom();
           } else {
             display.slideIndex = this.messageSlideMap[msgId] ?? (this.slides.length ? this.slides.length - 1 : undefined);
           }
@@ -951,6 +964,10 @@ const Classroom = {
     }
 
     const userMsg = { role: 'user', content: text || '请分析这张图片', images };
+    if (this.stage === 'teaching' && !this.revisitMode && text && !this.isConfirmationMessage(text)) {
+      this.teachingInQa = true;
+      this.updateTeachingUX();
+    }
     if (this.stage === 'teaching' && !this.revisitMode && this.tryAdvanceTeaching(text, images)) {
       return;
     }
