@@ -1,0 +1,20 @@
+{
+  "name": "neuralearn-demo",
+  "version": "1.0.0",
+  "description": "NeuraLearn - AI知识体系教学平台 Demo",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "keywords": ["ai", "education", "android", "demo"],
+  "license": "MIT",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.9"
+  }
+}

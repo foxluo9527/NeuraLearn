@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NeuraLearn - AI 应用开发课堂</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <div class="header-left">
+        <div class="logo">
+          <svg viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="14" stroke="url(#lg)" stroke-width="2"/>
+            <circle cx="10" cy="12" r="2" fill="#4f9eff"/><circle cx="22" cy="12" r="2" fill="#8b5cf6"/>
+            <circle cx="16" cy="22" r="2" fill="#4f9eff"/>
+            <defs><linearGradient id="lg" x1="0" y1="0" x2="32" y2="32"><stop stop-color="#4f9eff"/><stop offset="1" stop-color="#8b5cf6"/></linearGradient></defs>
+          </svg>
+        </div>
+        <div>
+          <h1 class="header-title">NeuraLearn</h1>
+          <p class="header-subtitle">AI 应用开发 · 智能课堂</p>
+        </div>
+      </div>
+      <div class="header-center" id="header-progress">
+        <span class="progress-pill"><span id="header-mastered">0</span> / <span id="header-total">12</span> 课时已掌握</span>
+      </div>
+      <div class="header-right">
+        <div class="provider-select-wrap">
+          <label for="ai-provider">AI 引擎</label>
+          <select id="ai-provider"></select>
+        </div>
+        <button class="btn-ghost" id="btn-knowledge-drawer" title="我的知识库">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
+          知识库
+        </button>
+      </div>
+    </header>
+
+    <!-- 学习路径首页 -->
+    <main id="view-path" class="view active">
+      <div class="path-hero">
+        <h2>AI 应用开发</h2>
+        <p>从 Prompt 到 Agent，构建生产级 AI 应用</p>
+        <button class="btn-primary btn-continue" id="btn-continue">继续学习</button>
+      </div>
+      <div class="path-layout">
+        <div class="path-timeline" id="path-timeline"></div>
+        <div class="path-modules" id="path-modules"></div>
+      </div>
+    </main>
+
+    <!-- 沉浸式课堂 -->
+    <main id="view-classroom" class="view">
+      <div class="classroom-toolbar">
+        <button class="btn-back" id="btn-back-path">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+          返回学习路径
+        </button>
+        <div class="classroom-meta">
+          <h2 id="classroom-title">课时标题</h2>
+          <div class="phase-bar" id="phase-bar">
+            <span class="phase" data-phase="review">
+              <span class="phase-icon"></span>
+              <span class="phase-text">节前回顾</span>
+            </span>
+            <span class="phase" data-phase="teaching">
+              <span class="phase-icon"></span>
+              <span class="phase-text">知识讲解</span>
+            </span>
+            <span class="phase" data-phase="quiz">
+              <span class="phase-icon"></span>
+              <span class="phase-text">课后练习</span>
+            </span>
+          </div>
+        </div>
+      </div>
+      <div class="classroom-grid">
+        <section class="stage-main" id="stage-main">
+          <div class="stage-header">
+            <span id="stage-mode-label">课前回顾</span>
+            <span id="stage-page-indicator"></span>
+          </div>
+          <div class="stage-content" id="stage-content"></div>
+        </section>
+        <aside class="classroom-dock">
+          <div class="dock-header">
+            <span class="dock-context" id="dock-context">正在讲解：—</span>
+            <label class="tts-toggle"><input type="checkbox" id="tts-enabled" checked> 语音播报</label>
+          </div>
+          <div class="dock-body">
+            <div class="dock-messages" id="dock-messages"></div>
+            <div class="dock-loading hidden" id="dock-loading">
+              <div class="loading-dots"><span></span><span></span><span></span></div>
+              <span>AI 思考中...</span>
+            </div>
+          </div>
+          <div class="dock-input dock-input-fixed">
+            <div class="image-preview hidden" id="image-preview"></div>
+            <div class="input-row">
+              <button class="btn-icon" id="btn-image" title="上传图片">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+              </button>
+              <input type="file" id="image-input" accept="image/*" hidden>
+              <button class="btn-icon" id="btn-mic" title="按住说话">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2M12 19v4M8 23h8"/></svg>
+              </button>
+              <textarea id="dock-input" placeholder="向 AI 老师提问..." rows="2"></textarea>
+              <button class="btn-primary btn-send" id="btn-send">发送</button>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </main>
+  </div>
+
+  <!-- 知识库抽屉 -->
+  <div class="drawer-overlay hidden" id="drawer-overlay"></div>
+  <aside class="knowledge-drawer hidden" id="knowledge-drawer">
+    <div class="drawer-header">
+      <h3>我的知识库</h3>
+      <button class="btn-icon" id="btn-close-drawer">&times;</button>
+    </div>
+    <div class="drawer-progress">
+      <svg class="progress-ring" viewBox="0 0 120 120">
+        <defs><linearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#4f9eff"/><stop offset="100%" stop-color="#8b5cf6"/></linearGradient></defs>
+        <circle class="progress-ring-bg" cx="60" cy="60" r="52"/>
+        <circle class="progress-ring-fill" id="drawer-ring" cx="60" cy="60" r="52"/>
+      </svg>
+      <div class="ring-text"><span id="drawer-percent">0%</span><small>掌握进度</small></div>
+    </div>
+    <div class="drawer-suggestion" id="drawer-suggestion"></div>
+    <div class="drawer-cards" id="drawer-cards"></div>
+  </aside>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="js/stream-client.js"></script>
+  <script src="js/stage-renderer.js"></script>
+  <script src="js/voice.js"></script>
+  <script src="js/path-view.js"></script>
+  <script src="js/classroom.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
