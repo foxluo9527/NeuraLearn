@@ -59,6 +59,12 @@ function countTeachingSlides(messages) {
   return count;
 }
 
+function isTeachingConfirmation(text) {
+  const t = (text || '').trim();
+  if (!t) return false;
+  return /^(理解了?|懂了|明白|继续|好的|好|ok|yes|嗯|可以|没问题|下一步|知道了|收到|go on|next)[。.!！?？]?$/i.test(t);
+}
+
 function buildSystemPrompt(stage, topic, messages = []) {
   const meta = TOPIC_META[topic] || { prerequisites: 'AI 应用开发基础知识' };
   const prerequisites = meta.prerequisites;
@@ -67,6 +73,20 @@ function buildSystemPrompt(stage, topic, messages = []) {
   const memoryPoints = card?.memoryPoints?.join('\n- ') || '';
 
   if (stage === 'teaching') {
+    const lastUser = [...messages].reverse().find((m) => m.role === 'user');
+    const lastIsQuestion = lastUser && !isTeachingConfirmation(lastUser.content);
+
+    if (lastIsQuestion) {
+      return `你是 NeuraLearn 平台的 AI 教师，正在教授：${topic}
+学生刚提问或补充了内容，请先针对性简短回应。
+
+【回应规则 — 必须严格遵守】
+- 只用口语回答，80 字以内
+- 禁止输出 [SLIDE:...]、[DIAGRAM:...]、[STAGE:...] 等任何结构化标记
+- 不要讲下一个知识点，不要扩展课纲外的新主题
+- 回应后问一句「这样清楚吗？确认后我们继续」`;
+    }
+
     const taught = countTeachingSlides(messages);
     const nextId = `s${taught + 1}`;
     const progressHint = taught === 0
@@ -80,24 +100,24 @@ function buildSystemPrompt(stage, topic, messages = []) {
 - ${progressHint}
 - 每次回复只能讲解 1 个知识点，只能输出 1 个 [SLIDE:...] 标记
 - 禁止一次输出多个 SLIDE，禁止提前输出 [STAGE:quiz]
-- 讲完当前知识点后，用 1-2 句口语提问，例如「理解了吗？」「这里清楚吗？」，然后停止，等待学生回复
-- 只有学生回复「懂了/继续/明白」等确认后，下一条回复才能讲下一个知识点
+- 讲完当前知识点后，用 1-2 句口语确认学生理解，然后停止，等待学生回复
+- 只有学生回复「懂了/继续/明白」等纯确认语后，下一条回复才能讲下一个知识点
 - 全部核心知识点（通常 4-6 个）都讲完且学生确认后，才在末尾单独一行输出：[STAGE:quiz]
 
 教学方式：
 - 结合 Python/TypeScript 代码示例
 - 保持自然，像技术分享而非念课本
+- 只讲本课「${topic}」大纲内的内容，不要擅自扩展无关主题
 
 【SLIDE 格式】每讲完一个知识点输出（与口语一起）：
 [SLIDE:{"id":"${nextId}","title":"标题","bullets":["要点1","要点2"],"code":null}]
 - id 必须严格使用 ${nextId}
-- code 字段可选
+- code 字段可选；若含代码，JSON 字符串内换行用 \\n，引号用 \\"
 
 遇到复杂流程时，额外输出分步图解：
 [DIAGRAM:{"id":"d1","title":"流程名","steps":[{"label":"步骤1","mermaid":"graph LR\\n  A[输入]-->B[处理]"}]}]
 
-对话栏口语每段 50 字以内，详细内容放 SLIDE/DIAGRAM 里。
-用户打断提问时，先简短回答，再继续当前知识点或等待确认。`;
+对话栏口语每段 50 字以内，详细内容放 SLIDE/DIAGRAM 里。`;
   }
 
   if (stage === 'quiz') {

@@ -93,8 +93,7 @@ const Classroom = {
   isConfirmationMessage(text) {
     const t = (text || '').trim();
     if (!t) return false;
-    return /^(理解|懂了|明白|继续|好的|好|ok|yes|嗯|可以|没问题|下一步|知道了|收到|go on|next)/i.test(t)
-      || (t.length <= 6 && !/[?？]/.test(t));
+    return /^(理解了?|懂了|明白|继续|好的|好|ok|yes|嗯|可以|没问题|下一步|知道了|收到|go on|next)[。.!！?？]?$/i.test(t);
   },
 
   ingestTeachingSegments(fullText, parsed, msgId) {
@@ -466,7 +465,7 @@ const Classroom = {
 
     el.innerHTML = `
       ${msg.role === 'ai' ? '<div class="dock-avatar">AI</div>' : ''}
-      <div class="dock-bubble">${msg.content}${imgHtml ? `<div>${imgHtml}</div>` : ''}${linkHint}</div>`;
+      <div class="dock-bubble">${StreamClient.toDisplayText(msg.content)}${imgHtml ? `<div>${imgHtml}</div>` : ''}${linkHint}</div>`;
 
     if (linkable || msg.role === 'ai' || msg.role === 'system') {
       el.addEventListener('click', () => this.handleDockMessageClick(msg, el));
@@ -696,6 +695,11 @@ const Classroom = {
       this.setLoading(false);
       bubbleEl = this.addDockMessage('ai', '', msgId, null, { appendOnly: true });
 
+      const lastUserMsg = !isOpening && extraMessages.length
+        ? extraMessages[extraMessages.length - 1]
+        : null;
+      const isQuestionTurn = lastUserMsg && !this.isConfirmationMessage(lastUserMsg.content);
+
       await StreamClient.streamChat(
         '/api/chat',
         { messages: msgs, stage: this.stage, topic: this.topic, provider: App.getProvider() },
@@ -703,7 +707,11 @@ const Classroom = {
           let display = { oral: parsed.cleanText || StreamClient.stripMarkers(fullText), slideIndex: undefined };
 
           if (this.stage === 'teaching' && !this.revisitMode) {
-            display = this.previewTeachingStream(fullText, parsed, msgId);
+            if (isQuestionTurn) {
+              display.oral = parsed.cleanText || StreamClient.stripMarkers(fullText);
+            } else {
+              display = this.previewTeachingStream(fullText, parsed, msgId);
+            }
           } else if (parsed.slides.length) {
             parsed.slides.forEach((s) => {
               if (!this.slides.find((x) => x.id === s.id)) {
@@ -725,7 +733,7 @@ const Classroom = {
             }
           }
 
-          if (parsed.diagrams.length) {
+          if (!isQuestionTurn && parsed.diagrams.length) {
             parsed.diagrams.forEach((d) => {
               if (!this.diagrams.find((x) => x.id === d.id)) this.diagrams.push(d);
             });
@@ -738,7 +746,11 @@ const Classroom = {
           let display = { oral: parsed.cleanText || StreamClient.stripMarkers(fullText), slideIndex: undefined };
 
           if (this.stage === 'teaching' && !this.revisitMode) {
-            display = this.ingestTeachingSegments(fullText, parsed, msgId);
+            if (isQuestionTurn) {
+              display.oral = parsed.cleanText || StreamClient.stripMarkers(fullText);
+            } else {
+              display = this.ingestTeachingSegments(fullText, parsed, msgId);
+            }
           } else {
             display.slideIndex = this.messageSlideMap[msgId] ?? (this.slides.length ? this.slides.length - 1 : undefined);
           }
@@ -1009,7 +1021,7 @@ const Classroom = {
         if (slideIndex !== undefined) existing.slideIndex = slideIndex;
         const el = this.dom.dockMessages.querySelector(`[data-msg-id="${msgId}"]`);
         if (el) {
-          el.querySelector('.dock-bubble').textContent = content;
+          el.querySelector('.dock-bubble').textContent = StreamClient.toDisplayText(content);
           return el;
         }
       }
