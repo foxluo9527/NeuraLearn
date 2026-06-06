@@ -26,6 +26,9 @@ const Classroom = {
   quizState: { answers: {} },
   stageView: 'primary',
   returnToQuizIndex: null,
+  pendingSegments: [],
+  pendingStageQuiz: false,
+  awaitingConfirmation: false,
 
   dom: {},
 
@@ -80,6 +83,133 @@ const Classroom = {
     return this.stage;
   },
 
+  resetTeachingQueue() {
+    this.pendingSegments = [];
+    this.pendingStageQuiz = false;
+    this.awaitingConfirmation = false;
+    this._finalizedMsgIds = new Set();
+  },
+
+  isConfirmationMessage(text) {
+    const t = (text || '').trim();
+    if (!t) return false;
+    return /^(理解|懂了|明白|继续|好的|好|ok|yes|嗯|可以|没问题|下一步|知道了|收到|go on|next)/i.test(t)
+      || (t.length <= 6 && !/[?？]/.test(t));
+  },
+
+  ingestTeachingSegments(fullText, parsed, msgId) {
+    if (this._finalizedMsgIds?.has(msgId)) {
+      return {
+        oral: parsed.cleanText || StreamClient.stripMarkers(fullText),
+        slideIndex: this.messageSlideMap[msgId],
+      };
+    }
+
+    const { segments, stage } = StreamClient.parseTeachingSegments(fullText);
+    const indexedSegments = segments.map((seg) => {
+      let slideIndex = this.slides.findIndex((x) => x.id === seg.slide.id);
+      if (slideIndex === -1) {
+        seg.slide.messageId = msgId;
+        this.slides.push(seg.slide);
+        slideIndex = this.slides.length - 1;
+      }
+      return { oral: seg.oral, slide: seg.slide, slideIndex };
+    });
+
+    if (stage === 'quiz') this.pendingStageQuiz = true;
+
+    if (!indexedSegments.length) {
+      return {
+        oral: parsed.cleanText || StreamClient.stripMarkers(fullText),
+        slideIndex: this.messageSlideMap[msgId],
+      };
+    }
+
+    const first = indexedSegments[0];
+    if (indexedSegments.length > 1) {
+      this.pendingSegments.push(...indexedSegments.slice(1));
+    }
+    this.currentSlideIndex = first.slideIndex;
+    this.messageSlideMap[msgId] = first.slideIndex;
+    this.awaitingConfirmation = true;
+    this.showCurrentSlide();
+
+    if (!this._finalizedMsgIds) this._finalizedMsgIds = new Set();
+    this._finalizedMsgIds.add(msgId);
+
+    return { oral: first.oral, slideIndex: first.slideIndex };
+  },
+
+  previewTeachingStream(fullText, parsed, msgId) {
+    const { segments } = StreamClient.parseTeachingSegments(fullText);
+    if (!segments.length) {
+      return { oral: parsed.cleanText || StreamClient.stripMarkers(fullText), slideIndex: undefined };
+    }
+
+    segments.forEach((seg) => {
+      if (!this.slides.find((x) => x.id === seg.slide.id)) {
+        seg.slide.messageId = msgId;
+        this.slides.push(seg.slide);
+      }
+    });
+
+    const slideIndex = this.slides.findIndex((x) => x.id === segments[0].slide.id);
+    this.currentSlideIndex = slideIndex;
+    this.showCurrentSlide();
+    return { oral: segments[0].oral, slideIndex };
+  },
+
+  showQueuedTeachingSegment() {
+    if (!this.pendingSegments.length) return false;
+
+    const next = this.pendingSegments.shift();
+    this.currentSlideIndex = next.slideIndex;
+    this.awaitingConfirmation = true;
+
+    const msgId = `msg-${Date.now()}`;
+    this.messageSlideMap[msgId] = next.slideIndex;
+    this.addDockMessage('ai', next.oral, msgId, null, { slideIndex: next.slideIndex });
+    this.showCurrentSlide();
+    Voice.speak(next.oral);
+    this.saveSession();
+    return true;
+  },
+
+  maybeFinishTeaching() {
+    if (!this.pendingStageQuiz || this.pendingSegments.length || this.awaitingConfirmation) return false;
+    this.pendingStageQuiz = false;
+    this.completePhase('teaching');
+    this.addDockMessage('system', '知识讲解已完成，进入课后练习');
+    setTimeout(() => this.startQuiz(), 1000);
+    return true;
+  },
+
+  tryAdvanceTeaching(userText, userImages) {
+    if (this.stage !== 'teaching' || this.revisitMode) return false;
+    if (!this.isConfirmationMessage(userText)) return false;
+
+    const hasQueue = this.pendingSegments.length > 0;
+    const shouldFinish = this.pendingStageQuiz && !hasQueue;
+
+    if (!hasQueue && !shouldFinish) {
+      this.awaitingConfirmation = false;
+      return false;
+    }
+
+    this.addDockMessage('user', userText, null, userImages);
+    this.messages.push({ role: 'user', content: userText, images: userImages || [] });
+    this.awaitingConfirmation = false;
+
+    if (this.showQueuedTeachingSegment()) return true;
+
+    if (shouldFinish) {
+      this.maybeFinishTeaching();
+      return true;
+    }
+
+    return false;
+  },
+
   async enter(topic, revisit = false) {
     this.topic = topic;
     this.revisitMode = revisit;
@@ -95,6 +225,7 @@ const Classroom = {
     this.quizState = { answers: {} };
     this.stageView = 'primary';
     this.returnToQuizIndex = null;
+    this.resetTeachingQueue();
     this.pendingImages = [];
     this.phaseMessages = { review: [], teaching: [], quiz: [] };
     this.phasesCompleted = [];
@@ -526,6 +657,7 @@ const Classroom = {
   async startTeaching() {
     this.stage = 'teaching';
     this.currentDockPhase = 'teaching';
+    this.resetTeachingQueue();
     this.updatePhaseBar();
     this.renderFullDock();
     this.dom.stageModeLabel.textContent = '知识讲解';
@@ -568,10 +700,11 @@ const Classroom = {
         '/api/chat',
         { messages: msgs, stage: this.stage, topic: this.topic, provider: App.getProvider() },
         (fullText, parsed) => {
-          const clean = parsed.cleanText || StreamClient.stripMarkers(fullText);
-          if (bubbleEl) bubbleEl.querySelector('.dock-bubble').textContent = clean || '...';
+          let display = { oral: parsed.cleanText || StreamClient.stripMarkers(fullText), slideIndex: undefined };
 
-          if (parsed.slides.length) {
+          if (this.stage === 'teaching' && !this.revisitMode) {
+            display = this.previewTeachingStream(fullText, parsed, msgId);
+          } else if (parsed.slides.length) {
             parsed.slides.forEach((s) => {
               if (!this.slides.find((x) => x.id === s.id)) {
                 s.messageId = msgId;
@@ -580,7 +713,16 @@ const Classroom = {
             });
             this.currentSlideIndex = this.slides.length - 1;
             this.messageSlideMap[msgId] = this.currentSlideIndex;
+            display.slideIndex = this.currentSlideIndex;
             this.showCurrentSlide();
+          }
+
+          if (bubbleEl) {
+            bubbleEl.querySelector('.dock-bubble').textContent = display.oral || '...';
+            if (display.slideIndex !== undefined) {
+              bubbleEl.dataset.slideIndex = display.slideIndex;
+              bubbleEl.style.cursor = 'pointer';
+            }
           }
 
           if (parsed.diagrams.length) {
@@ -593,29 +735,39 @@ const Classroom = {
           }
         },
         (fullText, parsed) => {
-          const clean = parsed.cleanText || StreamClient.stripMarkers(fullText);
-          const slideIdx = this.messageSlideMap[msgId] ?? (this.slides.length ? this.slides.length - 1 : undefined);
+          let display = { oral: parsed.cleanText || StreamClient.stripMarkers(fullText), slideIndex: undefined };
+
+          if (this.stage === 'teaching' && !this.revisitMode) {
+            display = this.ingestTeachingSegments(fullText, parsed, msgId);
+          } else {
+            display.slideIndex = this.messageSlideMap[msgId] ?? (this.slides.length ? this.slides.length - 1 : undefined);
+          }
 
           if (bubbleEl) {
-            bubbleEl.querySelector('.dock-bubble').textContent = clean;
-            if (slideIdx !== undefined) {
-              bubbleEl.dataset.slideIndex = slideIdx;
+            bubbleEl.querySelector('.dock-bubble').textContent = display.oral || parsed.cleanText || '...';
+            if (display.slideIndex !== undefined) {
+              bubbleEl.dataset.slideIndex = display.slideIndex;
               bubbleEl.style.cursor = 'pointer';
             }
           }
 
-          this.updatePhaseMessage(msgId, clean, slideIdx);
+          this.updatePhaseMessage(msgId, display.oral || parsed.cleanText, display.slideIndex);
 
           if (!isOpening) {
             extraMessages.forEach((m) => this.messages.push(m));
           }
           this.messages.push({ role: 'assistant', content: fullText });
-          this.teachingContent += '\n' + clean;
+          this.teachingContent += '\n' + (display.oral || parsed.cleanText);
 
-          Voice.speak(clean);
+          Voice.speak(display.oral || parsed.cleanText);
           this.saveSession();
 
-          if (parsed.stage === 'quiz' && this.stage === 'teaching') {
+          if (this.stage === 'teaching' && !this.revisitMode) {
+            if (parsed.stage === 'quiz') this.pendingStageQuiz = true;
+            if (!this.pendingSegments.length && !this.awaitingConfirmation && this.pendingStageQuiz) {
+              this.maybeFinishTeaching();
+            }
+          } else if (parsed.stage === 'quiz' && this.stage === 'teaching') {
             this.completePhase('teaching');
             this.addDockMessage('system', '知识讲解已完成，进入课后练习');
             setTimeout(() => this.startQuiz(), 1000);
@@ -675,6 +827,10 @@ const Classroom = {
     }
 
     const userMsg = { role: 'user', content: text || '请分析这张图片', images };
+    if (this.stage === 'teaching' && !this.revisitMode && this.tryAdvanceTeaching(text, images)) {
+      return;
+    }
+
     await this.streamAI([userMsg]);
   },
 

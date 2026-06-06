@@ -47,7 +47,19 @@ const store = {
 // SYSTEM PROMPTS
 // ============================================================================
 
-function buildSystemPrompt(stage, topic) {
+function countTeachingSlides(messages) {
+  const re = /\[SLIDE:\{[\s\S]*?\}\]/g;
+  let count = 0;
+  (messages || []).forEach((m) => {
+    if (m.role === 'assistant') {
+      const matches = m.content.match(re);
+      if (matches) count += matches.length;
+    }
+  });
+  return count;
+}
+
+function buildSystemPrompt(stage, topic, messages = []) {
   const meta = TOPIC_META[topic] || { prerequisites: 'AI 应用开发基础知识' };
   const prerequisites = meta.prerequisites;
   const slides = store.topicSlides[topic] || [];
@@ -55,26 +67,37 @@ function buildSystemPrompt(stage, topic) {
   const memoryPoints = card?.memoryPoints?.join('\n- ') || '';
 
   if (stage === 'teaching') {
+    const taught = countTeachingSlides(messages);
+    const nextId = `s${taught + 1}`;
+    const progressHint = taught === 0
+      ? '这是第一个知识点，从 s1 开始讲。'
+      : `已讲完 ${taught} 个知识点，本次只讲第 ${taught + 1} 个（id=${nextId}）。`;
+
     return `你是 NeuraLearn 平台的 AI 教师，正在教授 AI 应用开发课程中的：${topic}
 当前任务：主动教学，你主导讲解节奏。
 
+【节奏规则 — 必须严格遵守】
+- ${progressHint}
+- 每次回复只能讲解 1 个知识点，只能输出 1 个 [SLIDE:...] 标记
+- 禁止一次输出多个 SLIDE，禁止提前输出 [STAGE:quiz]
+- 讲完当前知识点后，用 1-2 句口语提问，例如「理解了吗？」「这里清楚吗？」，然后停止，等待学生回复
+- 只有学生回复「懂了/继续/明白」等确认后，下一条回复才能讲下一个知识点
+- 全部核心知识点（通常 4-6 个）都讲完且学生确认后，才在末尾单独一行输出：[STAGE:quiz]
+
 教学方式：
-- 每次讲解一个子概念，结合 Python/TypeScript 代码示例
-- 每讲完一段，用简短口语确认学生理解
+- 结合 Python/TypeScript 代码示例
 - 保持自然，像技术分享而非念课本
 
-【重要】每讲解一个知识点，必须输出结构化标记（与口语内容一起输出）：
-
-[SLIDE:{"id":"s1","title":"标题","bullets":["要点1","要点2"],"code":null}]
-- id 递增：s1, s2, s3...
-- code 字段可选，放代码字符串
+【SLIDE 格式】每讲完一个知识点输出（与口语一起）：
+[SLIDE:{"id":"${nextId}","title":"标题","bullets":["要点1","要点2"],"code":null}]
+- id 必须严格使用 ${nextId}
+- code 字段可选
 
 遇到复杂流程时，额外输出分步图解：
 [DIAGRAM:{"id":"d1","title":"流程名","steps":[{"label":"步骤1","mermaid":"graph LR\\n  A[输入]-->B[处理]"}]}]
 
-对话栏只写简短口语（50字以内/段），详细内容放 SLIDE/DIAGRAM 里。
-讲完核心内容后，末尾单独一行：[STAGE:quiz]
-用户打断提问时，先回答再继续。`;
+对话栏口语每段 50 字以内，详细内容放 SLIDE/DIAGRAM 里。
+用户打断提问时，先简短回答，再继续当前知识点或等待确认。`;
   }
 
   if (stage === 'quiz') {
@@ -437,8 +460,8 @@ app.post('/api/chat', async (req, res) => {
   res.setHeader('Connection', 'keep-alive');
   res.flushHeaders?.();
 
-  const system = buildSystemPrompt(stage, topic);
   const normalized = normalizeMessages(messages);
+  const system = buildSystemPrompt(stage, topic, normalized);
   store.lastSession = { topic, stage, messages: normalized };
 
   await streamChat(provider, system, normalized, res);

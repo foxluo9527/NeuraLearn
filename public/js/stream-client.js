@@ -19,31 +19,42 @@ const StreamClient = {
   },
 
   parseBlocks(text) {
-    const slides = [];
+    const { segments, stage, score } = this.parseTeachingSegments(text);
+    const slides = segments.map((s) => s.slide);
     const diagrams = [];
-    let stage = null;
-    let score = null;
-
     let m;
-    const slideRe = /\[SLIDE:(\{[\s\S]*?\})\]/g;
-    while ((m = slideRe.exec(text)) !== null) {
-      try { slides.push(JSON.parse(m[1])); } catch { /* skip */ }
-    }
-
     const diagramRe = /\[DIAGRAM:(\{[\s\S]*?\})\]/g;
     while ((m = diagramRe.exec(text)) !== null) {
       try { diagrams.push(JSON.parse(m[1])); } catch { /* skip */ }
     }
+    return { slides, diagrams, stage, score, cleanText: this.stripMarkers(text), segments };
+  },
 
-    const stageM = text.match(/\[STAGE:(\w+)\]/);
-    if (stageM) stage = stageM[1];
+  /** 按 SLIDE 标记拆分口语段，便于逐步展示 */
+  parseTeachingSegments(text) {
+    const segments = [];
+    const slideRe = /\[SLIDE:(\{[\s\S]*?\})\]/g;
+    let lastIndex = 0;
+    let m;
+    while ((m = slideRe.exec(text)) !== null) {
+      const oral = this.stripMarkers(text.slice(lastIndex, m.index)).trim();
+      try {
+        segments.push({ oral, slide: JSON.parse(m[1]) });
+      } catch { /* skip invalid slide */ }
+      lastIndex = m.index + m[0].length;
+    }
+
+    const trailing = text.slice(lastIndex);
+    const stageM = trailing.match(/\[STAGE:(\w+)\]/);
+    const stage = stageM ? stageM[1] : null;
 
     const scoreM = text.match(/\[SCORE:(\{[\s\S]*?\})\]/);
+    let score = null;
     if (scoreM) {
       try { score = JSON.parse(scoreM[1]); } catch { /* skip */ }
     }
 
-    return { slides, diagrams, stage, score, cleanText: this.stripMarkers(text) };
+    return { segments, stage, score };
   },
 
   async streamChat(url, body, onDelta, onDone, onError) {
